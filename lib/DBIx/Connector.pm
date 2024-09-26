@@ -48,8 +48,17 @@ sub _connect {
 
     $self->{driver_name} ||= $dbh->{Driver}{Name};
 
-    # Set up the driver and go!
-    return $self->driver->_connect($dbh, @args);
+    # Override the handle with driver->_connect, if needed
+    $dbh = $self->driver->_connect($dbh, @args);
+
+    # on_connect hook
+    if (my $action = $self->on_connect) {
+        # in line with run()/txn()
+        local $_ = $dbh;
+        $action->($_);
+    };
+
+    return $dbh;
 }
 
 sub dsn { ( $_[0]{_args}->() )[0] }
@@ -62,6 +71,20 @@ sub driver_name {
 sub driver {
     my $self = shift;
     $self->{driver} ||= DBIx::Connector::Driver->new( $self->{driver_name} || $self->driver_name );
+}
+
+sub on_connect {
+    my $self = shift;
+    if (@_) {
+        if (@_ != 1 || ref $_[0] ne 'CODE') {
+            require Carp;
+            Carp::croak("on_connect only allows a single function as an argument");
+        };
+        $self->{_on_connect} = $sub;
+        return $self;
+    } else {
+        return $self->{_on_connect};
+    }
 }
 
 sub connect {
